@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"io/ioutil"
 	"regexp"
+	"sync"
 )
 
 func main() {
@@ -34,19 +35,31 @@ type UrlData struct {
 }
 
 func mainHandler(w http.ResponseWriter, r *http.Request) {
-	encoder := json.NewEncoder(w)
-	decoder := json.NewDecoder(r.Body)
-
 	var data []UrlData
 	var input []string
+	var wg sync.WaitGroup
+
+	encoder := json.NewEncoder(w)
+	decoder := json.NewDecoder(r.Body)
 
 	err := decoder.Decode(&input)
 	if err != nil {
 		encoder.Encode(err)
 	}
 
+	dataChan := make(chan UrlData, len(input))
 	for _, url := range input {
-		data = append(data, getData(url))
+		wg.Add(1)
+		go func(url string) {
+			dataChan <- getData(url)
+			defer wg.Done()
+		} (url)
+	}
+	wg.Wait()
+	close(dataChan)
+
+	for urlData := range dataChan {
+		data = append(data, urlData)
 	}
 
 	encoder.Encode(data)

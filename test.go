@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	// "strings"
+	"io/ioutil"
+	"regexp"
 )
 
 func main() {
-	http.HandleFunc("/", testHandler)
+	http.HandleFunc("/", mainHandler)
 	err := http.ListenAndServe(":8081", nil)
 	if err != nil {
 		fmt.Println("ListenAndServe: ", err)
@@ -32,7 +33,7 @@ type UrlData struct {
 	Elements []UrlDataElement `json:"elements"`
 }
 
-func testHandler(w http.ResponseWriter, r *http.Request) {
+func mainHandler(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	decoder := json.NewDecoder(r.Body)
 
@@ -56,16 +57,44 @@ func getData(url string) UrlData {
 	if err != nil {
 		fmt.Println(err)
 	}
+	defer resp.Body.Close()
 
-	_ = resp
+	body, _ := ioutil.ReadAll(resp.Body)
+
+	elements := countTags(body)
 
 	meta := UrlMeta{
 		Status:        resp.StatusCode,
 		ContentType:   resp.Header.Get("Content-type"),
-		ContentLength: 1,
+		ContentLength: len([]rune(string(body))),
 	}
 
-	data := UrlData{Url: url, Meta: meta}
+	data := UrlData{Url: url, Meta: meta, Elements: elements}
 
 	return data
+}
+
+func countTags(body []byte) []UrlDataElement {
+	var elements []UrlDataElement
+	tagsCount := make(map[string]int)
+
+	reg := regexp.MustCompile("<([a-z]+)([^>]*)>")
+	tags := reg.FindAll(body, -1);
+
+	reg = regexp.MustCompile("([a-z]+)")
+	for _, tag := range tags {
+		tagName := string(reg.Find(tag))
+
+		if tagsCount[tagName] == 0 {
+			tagsCount[tagName] = 1
+		} else {
+			tagsCount[tagName]++
+		}
+	}
+
+	for tag, count := range tagsCount {
+		elements = append(elements, UrlDataElement{tag, count})
+	}
+
+	return elements
 }
